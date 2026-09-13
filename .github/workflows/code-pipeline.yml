@@ -27,9 +27,19 @@ on:
         required: false
         type: string
 
+# A workflow_call can never grant the reusable workflow more than this caller
+# itself holds -- must cover its top-level needs plus every nested job's
+# (actions: write is for a nested job, not the top-level permissions block).
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+  actions: write
+
 jobs:
   pipeline:
-    uses: abi83/interns/.github/workflows/code-pipeline.yml@v0.1.0
+    uses: abi83/interns/.github/workflows/code-pipeline.yml@v0.1.1
     secrets: inherit
     with:
       issue_number: ${{ inputs.issue_number }}
