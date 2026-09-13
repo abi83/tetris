@@ -39,7 +39,7 @@ permissions:
 
 jobs:
   pipeline:
-    uses: abi83/interns/.github/workflows/code-pipeline.yml@v0.1.1
+    uses: abi83/interns/.github/workflows/code-pipeline.yml@v0
     secrets: inherit
     with:
       issue_number: ${{ inputs.issue_number }}
