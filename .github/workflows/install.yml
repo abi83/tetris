@@ -1,0 +1,27 @@
+# Thin caller for the interns install workflow.
+# interns-install opens the PR that adds this file (alongside the caller stubs),
+# then dispatches it once the PR is merged. Re-run any time from the Actions
+# tab to re-sync label drift.
+name: Install interns
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "interns ref for the label manifest (blank = the pinned tag)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  install:
+    uses: abi83/interns/.github/workflows/install.yml@v0.1.0
+    secrets: inherit
+    with:
+      # Fall back to the exact tag this wrapper is pinned to, never to the
+      # consumer's commit SHA.
+      ref: ${{ inputs.ref || 'v0.1.0' }}
