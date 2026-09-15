@@ -51,4 +51,4 @@ jobs:
       pr_number: ${{ inputs.pr_number }}
       fix_round: ${{ inputs.fix_round || false }}
       phase: ${{ inputs.phase }}
-      debug: ${{ inputs.debug || false }}
+      debug: true
