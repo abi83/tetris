@@ -36,4 +36,4 @@ jobs:
     with:
       issue_number: ${{ inputs.issue_number }}
       phase: ${{ inputs.phase }}
-      debug: ${{ inputs.debug || false }}
+      debug: true
