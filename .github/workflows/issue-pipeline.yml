@@ -7,7 +7,6 @@ on:
     types: [labeled]
   workflow_dispatch:
     inputs:
-      pipeline_ref: refs/tags/v0
       issue_number:
         description: Issue number
         required: true
