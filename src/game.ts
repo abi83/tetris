@@ -1,4 +1,4 @@
-import { BOARD_WIDTH, hasCollision, placePiece, type Position } from "./board";
+import { BOARD_WIDTH, clearRows, filledRows, hasCollision, placePiece, type Position } from "./board";
 import { TETROMINOES, TETROMINO_TYPES, type Grid, type TetrominoType } from "./tetromino";
 
 export interface ActivePiece {
@@ -10,6 +10,31 @@ export interface ActivePiece {
 export interface GameState {
   board: Grid;
   piece: ActivePiece;
+  score: number;
+  level: number;
+  linesCleared: number;
+}
+
+export const LINES_PER_LEVEL = 10;
+
+// Standard Tetris Guideline base scores per simultaneous line clear, scaled by level.
+const LINE_CLEAR_SCORES: Record<number, number> = {
+  0: 0,
+  1: 100,
+  2: 300,
+  3: 500,
+  4: 800,
+};
+
+const BASE_DROP_INTERVAL_MS = 1000;
+const DROP_INTERVAL_STEP_MS = 100;
+const MIN_DROP_INTERVAL_MS = 100;
+
+export function dropIntervalForLevel(level: number): number {
+  return Math.max(
+    MIN_DROP_INTERVAL_MS,
+    BASE_DROP_INTERVAL_MS - (level - 1) * DROP_INTERVAL_STEP_MS,
+  );
 }
 
 export function spawnPiece(random: () => number = Math.random): ActivePiece {
@@ -64,11 +89,21 @@ export function step(
 
   if (!hasCollision(shape, droppedPosition, state.board)) {
     return {
-      board: state.board,
+      ...state,
       piece: { ...state.piece, position: droppedPosition },
     };
   }
 
-  const board = placePiece(shape, state.piece.position, state.board);
-  return { board, piece: spawnPiece(random) };
+  const lockedBoard = placePiece(shape, state.piece.position, state.board);
+  const clearedRowCount = filledRows(lockedBoard).length;
+  const board = clearRows(lockedBoard);
+  const linesCleared = state.linesCleared + clearedRowCount;
+
+  return {
+    board,
+    piece: spawnPiece(random),
+    score: state.score + LINE_CLEAR_SCORES[clearedRowCount] * state.level,
+    level: Math.floor(linesCleared / LINES_PER_LEVEL) + 1,
+    linesCleared,
+  };
 }
