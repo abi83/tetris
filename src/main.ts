@@ -1,5 +1,5 @@
 import { createEmptyBoard } from "./board";
-import { spawnPiece, step, type GameState } from "./game";
+import { moveLeft, moveRight, rotate, spawnPiece, step, type GameState } from "./game";
 import { drawBoard, drawPiece, sizeCanvas } from "./render";
 import { TETROMINOES } from "./tetromino";
 
@@ -34,3 +34,23 @@ setInterval(() => {
   state = step(state);
   render();
 }, DROP_INTERVAL_MS);
+
+document.addEventListener("keydown", (event) => {
+  switch (event.key) {
+    case "ArrowLeft":
+      state = moveLeft(state);
+      break;
+    case "ArrowRight":
+      state = moveRight(state);
+      break;
+    case "ArrowUp":
+      state = rotate(state);
+      break;
+    case "ArrowDown":
+      state = step(state);
+      break;
+    default:
+      return;
+  }
+  render();
+});
