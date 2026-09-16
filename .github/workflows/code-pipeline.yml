@@ -9,7 +9,6 @@ on:
     types: [opened, ready_for_review, synchronize, closed]
   workflow_dispatch:
     inputs:
-      pipeline_ref: refs/tags/v0
       issue_number:
         description: Issue number (coder phase)
         required: false
