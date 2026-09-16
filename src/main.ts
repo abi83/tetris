@@ -1,6 +1,9 @@
 import { createEmptyBoard } from "./board";
+import { spawnPiece, step, type GameState } from "./game";
 import { drawBoard, drawPiece, sizeCanvas } from "./render";
 import { TETROMINOES } from "./tetromino";
+
+const DROP_INTERVAL_MS = 1000;
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -14,7 +17,20 @@ sizeCanvas(canvas);
 
 const ctx = canvas.getContext("2d");
 
-if (ctx) {
-  drawBoard(ctx, createEmptyBoard());
-  drawPiece(ctx, TETROMINOES.T[0], { row: 0, col: 3 });
+let state: GameState = { board: createEmptyBoard(), piece: spawnPiece() };
+
+function render(): void {
+  if (!ctx) return;
+  drawBoard(ctx, state.board);
+  drawPiece(
+    ctx,
+    TETROMINOES[state.piece.type][state.piece.rotation],
+    state.piece.position,
+  );
 }
+
+render();
+setInterval(() => {
+  state = step(state);
+  render();
+}, DROP_INTERVAL_MS);
