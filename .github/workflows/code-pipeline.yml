@@ -9,6 +9,7 @@ on:
     types: [opened, ready_for_review, synchronize, closed]
   workflow_dispatch:
     inputs:
+      pipeline_ref: refs/tags/v0
       issue_number:
         description: Issue number (coder phase)
         required: false
@@ -47,6 +48,7 @@ jobs:
     uses: abi83/interns/.github/workflows/code-pipeline.yml@v0
     secrets: inherit
     with:
+      pipeline_ref: refs/tags/v0
       issue_number: ${{ inputs.issue_number }}
       pr_number: ${{ inputs.pr_number }}
       fix_round: ${{ inputs.fix_round || false }}
