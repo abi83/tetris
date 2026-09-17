@@ -1,4 +1,12 @@
-import { BOARD_WIDTH, clearRows, filledRows, hasCollision, placePiece, type Position } from "./board";
+import {
+  BOARD_WIDTH,
+  clearRows,
+  createEmptyBoard,
+  filledRows,
+  hasCollision,
+  placePiece,
+  type Position,
+} from "./board";
 import { TETROMINOES, TETROMINO_TYPES, type Grid, type TetrominoType } from "./tetromino";
 
 export interface ActivePiece {
@@ -10,12 +18,18 @@ export interface ActivePiece {
 export interface GameState {
   board: Grid;
   piece: ActivePiece;
+  queue: readonly TetrominoType[];
+  hold: TetrominoType | null;
+  canHold: boolean;
   score: number;
   level: number;
   linesCleared: number;
 }
 
 export const LINES_PER_LEVEL = 10;
+
+// How many upcoming pieces the next-queue panel displays.
+export const NEXT_QUEUE_SIZE = 3;
 
 // Standard Tetris Guideline base scores per simultaneous line clear, scaled by level.
 const LINE_CLEAR_SCORES: Record<number, number> = {
@@ -37,11 +51,48 @@ export function dropIntervalForLevel(level: number): number {
   );
 }
 
-export function spawnPiece(random: () => number = Math.random): ActivePiece {
-  const type = TETROMINO_TYPES[Math.floor(random() * TETROMINO_TYPES.length)];
+// Fisher-Yates shuffle of one of each tetromino type: the 7-bag randomizer,
+// so every type is drawn exactly once before any type repeats.
+function shuffledBag(random: () => number): TetrominoType[] {
+  const bag = [...TETROMINO_TYPES];
+  for (let i = bag.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [bag[i], bag[j]] = [bag[j], bag[i]];
+  }
+  return bag;
+}
+
+// Draws the next piece type from the front of the queue, topping it up with
+// a freshly shuffled bag whenever it runs low so at least NEXT_QUEUE_SIZE
+// pieces remain queued after every draw.
+export function drawPiece(
+  queue: readonly TetrominoType[],
+  random: () => number = Math.random,
+): { type: TetrominoType; queue: TetrominoType[] } {
+  const filled = queue.length > NEXT_QUEUE_SIZE ? queue : [...queue, ...shuffledBag(random)];
+  const [type, ...rest] = filled;
+  return { type, queue: rest };
+}
+
+export function spawnPiece(type: TetrominoType): ActivePiece {
   const shape = TETROMINOES[type][0];
   const col = Math.floor((BOARD_WIDTH - shape[0].length) / 2);
   return { type, rotation: 0, position: { row: 0, col } };
+}
+
+export function createGameState(random: () => number = Math.random): GameState {
+  const { type, queue } = drawPiece([], random);
+
+  return {
+    board: createEmptyBoard(),
+    piece: spawnPiece(type),
+    queue,
+    hold: null,
+    canHold: true,
+    score: 0,
+    level: 1,
+    linesCleared: 0,
+  };
 }
 
 export function moveLeft(state: GameState): GameState {
@@ -63,7 +114,7 @@ function moveHorizontal(state: GameState, delta: number): GameState {
     return state;
   }
 
-  return { board: state.board, piece: { ...state.piece, position } };
+  return { ...state, piece: { ...state.piece, position } };
 }
 
 export function rotate(state: GameState): GameState {
@@ -74,7 +125,7 @@ export function rotate(state: GameState): GameState {
     return state;
   }
 
-  return { board: state.board, piece: { ...state.piece, rotation } };
+  return { ...state, piece: { ...state.piece, rotation } };
 }
 
 // Repeatedly applies hasCollision to find the lowest legal row for the
@@ -100,10 +151,14 @@ function lockPiece(
   const clearedRowCount = filledRows(lockedBoard).length;
   const board = clearRows(lockedBoard);
   const linesCleared = state.linesCleared + clearedRowCount;
+  const { type, queue } = drawPiece(state.queue, random);
 
   return {
     board,
-    piece: spawnPiece(random),
+    piece: spawnPiece(type),
+    queue,
+    hold: state.hold,
+    canHold: true,
     score: state.score + LINE_CLEAR_SCORES[clearedRowCount] * state.level,
     level: Math.floor(linesCleared / LINES_PER_LEVEL) + 1,
     linesCleared,
@@ -138,4 +193,34 @@ export function hardDrop(
   const position = landingPosition(state.piece, state.board);
 
   return lockPiece(state, shape, position, random);
+}
+
+// Swaps the active piece into the hold slot, drawing a replacement from the
+// queue the first time hold is used. Guideline hold rules: at most one swap
+// per piece, re-enabled by lockPiece once the piece locks.
+export function holdPiece(
+  state: GameState,
+  random: () => number = Math.random,
+): GameState {
+  if (!state.canHold) {
+    return state;
+  }
+
+  if (state.hold === null) {
+    const { type, queue } = drawPiece(state.queue, random);
+    return {
+      ...state,
+      piece: spawnPiece(type),
+      queue,
+      hold: state.piece.type,
+      canHold: false,
+    };
+  }
+
+  return {
+    ...state,
+    piece: spawnPiece(state.hold),
+    hold: state.piece.type,
+    canHold: false,
+  };
 }
