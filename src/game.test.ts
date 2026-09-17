@@ -6,9 +6,11 @@ import {
   landingPosition,
   moveLeft,
   moveRight,
+  restart,
   rotate,
   spawnPiece,
   step,
+  togglePause,
   type GameState,
 } from "./game";
 import { TETROMINOES, TETROMINO_TYPES } from "./tetromino";
@@ -47,6 +49,10 @@ describe("moveLeft", () => {
     const state: GameState = {
       board: createEmptyBoard(),
       piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } },
+      score: 0,
+      level: 1,
+      linesCleared: 0,
+      status: "playing",
     };
 
     const next = moveLeft(state);
@@ -59,6 +65,10 @@ describe("moveLeft", () => {
     const state: GameState = {
       board: createEmptyBoard(),
       piece: { type: "T", rotation: 0, position: { row: 0, col: 0 } },
+      score: 0,
+      level: 1,
+      linesCleared: 0,
+      status: "playing",
     };
 
     const next = moveLeft(state);
@@ -71,6 +81,10 @@ describe("moveLeft", () => {
     const state: GameState = {
       board: settled,
       piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } },
+      score: 0,
+      level: 1,
+      linesCleared: 0,
+      status: "playing",
     };
 
     const next = moveLeft(state);
@@ -84,6 +98,10 @@ describe("moveRight", () => {
     const state: GameState = {
       board: createEmptyBoard(),
       piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } },
+      score: 0,
+      level: 1,
+      linesCleared: 0,
+      status: "playing",
     };
 
     const next = moveRight(state);
@@ -96,6 +114,10 @@ describe("moveRight", () => {
     const state: GameState = {
       board: createEmptyBoard(),
       piece: { type: "T", rotation: 0, position: { row: 0, col: BOARD_WIDTH - 3 } },
+      score: 0,
+      level: 1,
+      linesCleared: 0,
+      status: "playing",
     };
 
     const next = moveRight(state);
@@ -109,6 +131,10 @@ describe("rotate", () => {
     const state: GameState = {
       board: createEmptyBoard(),
       piece: { type: "T", rotation: 0, position: { row: 3, col: 3 } },
+      score: 0,
+      level: 1,
+      linesCleared: 0,
+      status: "playing",
     };
 
     const next = rotate(state);
@@ -122,6 +148,10 @@ describe("rotate", () => {
     const state: GameState = {
       board: createEmptyBoard(),
       piece: { type: "T", rotation: 3, position: { row: 3, col: 3 } },
+      score: 0,
+      level: 1,
+      linesCleared: 0,
+      status: "playing",
     };
 
     const next = rotate(state);
@@ -133,6 +163,10 @@ describe("rotate", () => {
     const state: GameState = {
       board: createEmptyBoard(),
       piece: { type: "I", rotation: 1, position: { row: 0, col: BOARD_WIDTH - 3 } },
+      score: 0,
+      level: 1,
+      linesCleared: 0,
+      status: "playing",
     };
 
     const next = rotate(state);
@@ -145,6 +179,10 @@ describe("rotate", () => {
     const state: GameState = {
       board: settled,
       piece: { type: "T", rotation: 0, position: { row: 3, col: 3 } },
+      score: 0,
+      level: 1,
+      linesCleared: 0,
+      status: "playing",
     };
 
     const next = rotate(state);
@@ -191,7 +229,7 @@ describe("landingPosition", () => {
 });
 
 describe("hardDrop", () => {
-  const baseState = { score: 0, level: 1, linesCleared: 0 };
+  const baseState = { score: 0, level: 1, linesCleared: 0, status: "playing" as const };
 
   it("moves the piece straight to its landing position and locks it", () => {
     const state: GameState = {
@@ -228,7 +266,7 @@ describe("hardDrop", () => {
 });
 
 describe("step", () => {
-  const baseState = { score: 0, level: 1, linesCleared: 0 };
+  const baseState = { score: 0, level: 1, linesCleared: 0, status: "playing" as const };
 
   it("moves the piece down one row when the row below is clear", () => {
     const state: GameState = {
@@ -353,6 +391,7 @@ describe("step", () => {
       score: 0,
       level: 1,
       linesCleared: 9,
+      status: "playing",
       board,
       piece: { type: "O", rotation: 0, position },
     };
@@ -373,6 +412,7 @@ describe("step", () => {
       score: 500,
       level: 3,
       linesCleared: 20,
+      status: "playing",
       board,
       piece: { type: "O", rotation: 0, position },
     };
@@ -380,6 +420,122 @@ describe("step", () => {
     const next = step(state, randomFor("L"));
 
     expect(next.score).toBe(500 + 100 * 3);
+  });
+
+  it("sets status to gameOver when the newly spawned piece has no room", () => {
+    const toppedOut = placePiece(TETROMINOES.O[0], { row: 0, col: 4 }, createEmptyBoard());
+    const state: GameState = {
+      ...baseState,
+      board: toppedOut,
+      piece: { type: "O", rotation: 0, position: { row: BOARD_HEIGHT - 2, col: 0 } },
+    };
+
+    const next = step(state, randomFor("O"));
+
+    expect(next.status).toBe("gameOver");
+  });
+
+  it("keeps status playing when the newly spawned piece has room", () => {
+    const state: GameState = {
+      ...baseState,
+      board: createEmptyBoard(),
+      piece: { type: "O", rotation: 0, position: { row: BOARD_HEIGHT - 2, col: 0 } },
+    };
+
+    const next = step(state, randomFor("O"));
+
+    expect(next.status).toBe("playing");
+  });
+});
+
+describe("no-ops when the game is not playing", () => {
+  const notPlayingStates: [string, GameState][] = [
+    [
+      "paused",
+      {
+        board: createEmptyBoard(),
+        piece: { type: "T", rotation: 0, position: { row: 3, col: 3 } },
+        score: 0,
+        level: 1,
+        linesCleared: 0,
+        status: "paused",
+      },
+    ],
+    [
+      "gameOver",
+      {
+        board: createEmptyBoard(),
+        piece: { type: "T", rotation: 0, position: { row: 3, col: 3 } },
+        score: 0,
+        level: 1,
+        linesCleared: 0,
+        status: "gameOver",
+      },
+    ],
+  ];
+
+  it.each(notPlayingStates)("moveLeft is a no-op when %s", (_label, state) => {
+    expect(moveLeft(state)).toBe(state);
+  });
+
+  it.each(notPlayingStates)("moveRight is a no-op when %s", (_label, state) => {
+    expect(moveRight(state)).toBe(state);
+  });
+
+  it.each(notPlayingStates)("rotate is a no-op when %s", (_label, state) => {
+    expect(rotate(state)).toBe(state);
+  });
+
+  it.each(notPlayingStates)("step is a no-op when %s", (_label, state) => {
+    expect(step(state)).toBe(state);
+  });
+
+  it.each(notPlayingStates)("hardDrop is a no-op when %s", (_label, state) => {
+    expect(hardDrop(state)).toBe(state);
+  });
+});
+
+describe("togglePause", () => {
+  const state: GameState = {
+    board: createEmptyBoard(),
+    piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } },
+    score: 0,
+    level: 1,
+    linesCleared: 0,
+    status: "playing",
+  };
+
+  it("pauses a playing game", () => {
+    expect(togglePause(state).status).toBe("paused");
+  });
+
+  it("resumes a paused game", () => {
+    expect(togglePause({ ...state, status: "paused" }).status).toBe("playing");
+  });
+
+  it("is a no-op once the game is over", () => {
+    const gameOver: GameState = { ...state, status: "gameOver" };
+
+    expect(togglePause(gameOver)).toBe(gameOver);
+  });
+});
+
+describe("restart", () => {
+  it("returns a fresh playing state built the same way as the initial state", () => {
+    const next = restart(randomFor("T"));
+
+    expect(next).toEqual({
+      board: createEmptyBoard(),
+      piece: spawnPiece(randomFor("T")),
+      score: 0,
+      level: 1,
+      linesCleared: 0,
+      status: "playing",
+    });
+  });
+
+  it("resets a game regardless of its previous status", () => {
+    expect(restart(randomFor("T")).status).toBe("playing");
   });
 });
 
