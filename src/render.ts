@@ -14,6 +14,8 @@ const PIECE_COLOR = "#38bdf8";
 const GHOST_COLOR = "rgba(56, 189, 248, 0.5)";
 const PANEL_BACKGROUND_COLOR = "#1f2937";
 const PANEL_LABEL_COLOR = "#9ca3af";
+const OVERLAY_BACKGROUND_COLOR = "rgba(17, 24, 39, 0.75)";
+const OVERLAY_TEXT_COLOR = "#f9fafb";
 
 export function sizeCanvas(canvas: HTMLCanvasElement): void {
   canvas.width = BOARD_WIDTH * CELL_SIZE + SIDE_PANEL_WIDTH;
@@ -114,6 +116,20 @@ function drawPreviewPiece(
       }
     }
   }
+}
+
+export function drawOverlayText(ctx: CanvasRenderingContext2D, text: string): void {
+  const width = BOARD_WIDTH * CELL_SIZE;
+  const height = BOARD_HEIGHT * CELL_SIZE;
+
+  ctx.fillStyle = OVERLAY_BACKGROUND_COLOR;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.fillStyle = OVERLAY_TEXT_COLOR;
+  ctx.font = "24px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, width / 2, height / 2);
 }
 
 function drawCell(

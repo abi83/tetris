@@ -15,6 +15,8 @@ export interface ActivePiece {
   position: Position;
 }
 
+export type GameStatus = "playing" | "paused" | "gameOver";
+
 export interface GameState {
   board: Grid;
   piece: ActivePiece;
@@ -24,6 +26,7 @@ export interface GameState {
   score: number;
   level: number;
   linesCleared: number;
+  status: GameStatus;
 }
 
 export const LINES_PER_LEVEL = 10;
@@ -92,7 +95,20 @@ export function createGameState(random: () => number = Math.random): GameState {
     score: 0,
     level: 1,
     linesCleared: 0,
+    status: "playing",
   };
+}
+
+export function restart(random: () => number = Math.random): GameState {
+  return createGameState(random);
+}
+
+export function togglePause(state: GameState): GameState {
+  if (state.status === "gameOver") {
+    return state;
+  }
+
+  return { ...state, status: state.status === "paused" ? "playing" : "paused" };
 }
 
 export function moveLeft(state: GameState): GameState {
@@ -104,6 +120,10 @@ export function moveRight(state: GameState): GameState {
 }
 
 function moveHorizontal(state: GameState, delta: number): GameState {
+  if (state.status !== "playing") {
+    return state;
+  }
+
   const shape = TETROMINOES[state.piece.type][state.piece.rotation];
   const position: Position = {
     row: state.piece.position.row,
@@ -118,6 +138,10 @@ function moveHorizontal(state: GameState, delta: number): GameState {
 }
 
 export function rotate(state: GameState): GameState {
+  if (state.status !== "playing") {
+    return state;
+  }
+
   const rotation = (state.piece.rotation + 1) % 4;
   const shape = TETROMINOES[state.piece.type][rotation];
 
@@ -152,16 +176,22 @@ function lockPiece(
   const board = clearRows(lockedBoard);
   const linesCleared = state.linesCleared + clearedRowCount;
   const { type, queue } = drawPiece(state.queue, random);
+  const piece = spawnPiece(type);
+  const pieceShape = TETROMINOES[piece.type][piece.rotation];
+  const status: GameStatus = hasCollision(pieceShape, piece.position, board)
+    ? "gameOver"
+    : "playing";
 
   return {
     board,
-    piece: spawnPiece(type),
+    piece,
     queue,
     hold: state.hold,
     canHold: true,
     score: state.score + LINE_CLEAR_SCORES[clearedRowCount] * state.level,
     level: Math.floor(linesCleared / LINES_PER_LEVEL) + 1,
     linesCleared,
+    status,
   };
 }
 
@@ -169,6 +199,10 @@ export function step(
   state: GameState,
   random: () => number = Math.random,
 ): GameState {
+  if (state.status !== "playing") {
+    return state;
+  }
+
   const shape = TETROMINOES[state.piece.type][state.piece.rotation];
   const droppedPosition: Position = {
     row: state.piece.position.row + 1,
@@ -189,6 +223,10 @@ export function hardDrop(
   state: GameState,
   random: () => number = Math.random,
 ): GameState {
+  if (state.status !== "playing") {
+    return state;
+  }
+
   const shape = TETROMINOES[state.piece.type][state.piece.rotation];
   const position = landingPosition(state.piece, state.board);
 

@@ -10,9 +10,11 @@ import {
   moveLeft,
   moveRight,
   NEXT_QUEUE_SIZE,
+  restart,
   rotate,
   spawnPiece,
   step,
+  togglePause,
   type GameState,
 } from "./game";
 import { TETROMINOES, TETROMINO_TYPES, type TetrominoType } from "./tetromino";
@@ -27,6 +29,7 @@ function stateWith(overrides: Partial<GameState> = {}): GameState {
     score: 0,
     level: 1,
     linesCleared: 0,
+    status: "playing",
     ...overrides,
   };
 }
@@ -473,6 +476,98 @@ describe("step", () => {
     const next = step(state);
 
     expect(next.score).toBe(500 + 100 * 3);
+  });
+
+  it("sets status to gameOver when the newly spawned piece has no room", () => {
+    const toppedOut = placePiece(TETROMINOES.O[0], { row: 0, col: 4 }, createEmptyBoard());
+    const state = stateWith({
+      board: toppedOut,
+      piece: { type: "O", rotation: 0, position: { row: BOARD_HEIGHT - 2, col: 0 } },
+      queue: ["O", "S", "Z", "L"],
+    });
+
+    const next = step(state);
+
+    expect(next.status).toBe("gameOver");
+  });
+
+  it("keeps status playing when the newly spawned piece has room", () => {
+    const state = stateWith({
+      board: createEmptyBoard(),
+      piece: { type: "O", rotation: 0, position: { row: BOARD_HEIGHT - 2, col: 0 } },
+      queue: ["O", "S", "Z", "L"],
+    });
+
+    const next = step(state);
+
+    expect(next.status).toBe("playing");
+  });
+});
+
+describe("no-ops when the game is not playing", () => {
+  const notPlayingStates: [string, GameState][] = [
+    [
+      "paused",
+      stateWith({
+        piece: { type: "T", rotation: 0, position: { row: 3, col: 3 } },
+        status: "paused",
+      }),
+    ],
+    [
+      "gameOver",
+      stateWith({
+        piece: { type: "T", rotation: 0, position: { row: 3, col: 3 } },
+        status: "gameOver",
+      }),
+    ],
+  ];
+
+  it.each(notPlayingStates)("moveLeft is a no-op when %s", (_label, state) => {
+    expect(moveLeft(state)).toBe(state);
+  });
+
+  it.each(notPlayingStates)("moveRight is a no-op when %s", (_label, state) => {
+    expect(moveRight(state)).toBe(state);
+  });
+
+  it.each(notPlayingStates)("rotate is a no-op when %s", (_label, state) => {
+    expect(rotate(state)).toBe(state);
+  });
+
+  it.each(notPlayingStates)("step is a no-op when %s", (_label, state) => {
+    expect(step(state)).toBe(state);
+  });
+
+  it.each(notPlayingStates)("hardDrop is a no-op when %s", (_label, state) => {
+    expect(hardDrop(state)).toBe(state);
+  });
+});
+
+describe("togglePause", () => {
+  const state = stateWith({ piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } } });
+
+  it("pauses a playing game", () => {
+    expect(togglePause(state).status).toBe("paused");
+  });
+
+  it("resumes a paused game", () => {
+    expect(togglePause({ ...state, status: "paused" }).status).toBe("playing");
+  });
+
+  it("is a no-op once the game is over", () => {
+    const gameOver: GameState = { ...state, status: "gameOver" };
+
+    expect(togglePause(gameOver)).toBe(gameOver);
+  });
+});
+
+describe("restart", () => {
+  it("returns a fresh playing state built the same way as the initial state", () => {
+    expect(restart(() => 0)).toEqual(createGameState(() => 0));
+  });
+
+  it("resets a game regardless of its previous status", () => {
+    expect(restart().status).toBe("playing");
   });
 });
 
