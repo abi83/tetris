@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { BOARD_HEIGHT, BOARD_WIDTH, createEmptyBoard, placePiece } from "./board";
 import {
+  createGameState,
+  drawPiece,
   dropIntervalForLevel,
   hardDrop,
+  holdPiece,
   landingPosition,
   moveLeft,
   moveRight,
+  NEXT_QUEUE_SIZE,
   restart,
   rotate,
   spawnPiece,
@@ -13,11 +17,21 @@ import {
   togglePause,
   type GameState,
 } from "./game";
-import { TETROMINOES, TETROMINO_TYPES } from "./tetromino";
+import { TETROMINOES, TETROMINO_TYPES, type TetrominoType } from "./tetromino";
 
-function randomFor(type: (typeof TETROMINO_TYPES)[number]): () => number {
-  const index = TETROMINO_TYPES.indexOf(type);
-  return () => index / TETROMINO_TYPES.length;
+function stateWith(overrides: Partial<GameState> = {}): GameState {
+  return {
+    board: createEmptyBoard(),
+    piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } },
+    queue: ["I", "O", "S", "Z"],
+    hold: null,
+    canHold: true,
+    score: 0,
+    level: 1,
+    linesCleared: 0,
+    status: "playing",
+    ...overrides,
+  };
 }
 
 function fillRow(board: ReturnType<typeof createEmptyBoard>, row: number) {
@@ -25,35 +39,93 @@ function fillRow(board: ReturnType<typeof createEmptyBoard>, row: number) {
 }
 
 describe("spawnPiece", () => {
-  it("picks a type using the given random source", () => {
-    expect(spawnPiece(randomFor("L")).type).toBe("L");
+  it("sets the piece type", () => {
+    expect(spawnPiece("L").type).toBe("L");
   });
 
   it("starts at rotation 0", () => {
-    expect(spawnPiece(randomFor("T")).rotation).toBe(0);
+    expect(spawnPiece("T").rotation).toBe(0);
   });
 
   it("starts at the top of the board", () => {
-    expect(spawnPiece(randomFor("T")).position.row).toBe(0);
+    expect(spawnPiece("T").position.row).toBe(0);
   });
 
   it.each(TETROMINO_TYPES)("centers %s horizontally", (type) => {
-    const piece = spawnPiece(randomFor(type));
+    const piece = spawnPiece(type);
     const shapeWidth = TETROMINOES[type][0][0].length;
     expect(piece.position.col).toBe(Math.floor((BOARD_WIDTH - shapeWidth) / 2));
   });
 });
 
+describe("drawPiece (7-bag randomizer)", () => {
+  it("draws every tetromino type exactly once per bag before any type repeats", () => {
+    let queue: TetrominoType[] = [];
+    const draws: TetrominoType[] = [];
+
+    for (let i = 0; i < TETROMINO_TYPES.length * 50; i++) {
+      const result = drawPiece(queue);
+      draws.push(result.type);
+      queue = result.queue;
+    }
+
+    for (let bagStart = 0; bagStart < draws.length; bagStart += TETROMINO_TYPES.length) {
+      const bag = draws.slice(bagStart, bagStart + TETROMINO_TYPES.length);
+      expect([...bag].sort()).toEqual([...TETROMINO_TYPES].sort());
+    }
+  });
+
+  it("keeps at least NEXT_QUEUE_SIZE pieces queued after every draw", () => {
+    let queue: TetrominoType[] = [];
+
+    for (let i = 0; i < 30; i++) {
+      const result = drawPiece(queue);
+      queue = result.queue;
+      expect(queue.length).toBeGreaterThanOrEqual(NEXT_QUEUE_SIZE);
+    }
+  });
+
+  it("does not draw from the bag while the queue still has more than NEXT_QUEUE_SIZE pieces", () => {
+    const queue: TetrominoType[] = ["I", "O", "S", "Z"];
+
+    const result = drawPiece(queue, () => {
+      throw new Error("random should not be called");
+    });
+
+    expect(result.type).toBe("I");
+    expect(result.queue).toEqual(["O", "S", "Z"]);
+  });
+});
+
+describe("createGameState", () => {
+  it("starts with an empty board, no hold, and default score/level", () => {
+    const state = createGameState(() => 0);
+
+    expect(state.board).toEqual(createEmptyBoard());
+    expect(state.hold).toBeNull();
+    expect(state.canHold).toBe(true);
+    expect(state.score).toBe(0);
+    expect(state.level).toBe(1);
+    expect(state.linesCleared).toBe(0);
+  });
+
+  it("draws the active piece and queue from the same first bag", () => {
+    const state = createGameState(() => 0);
+    const firstBag = [state.piece.type, ...state.queue.slice(0, TETROMINO_TYPES.length - 1)];
+
+    expect([...firstBag].sort()).toEqual([...TETROMINO_TYPES].sort());
+  });
+
+  it("keeps at least NEXT_QUEUE_SIZE pieces queued", () => {
+    const state = createGameState(() => 0);
+
+    expect(state.queue.length).toBeGreaterThanOrEqual(NEXT_QUEUE_SIZE);
+  });
+});
+
 describe("moveLeft", () => {
   it("moves the piece one column left when unobstructed", () => {
-    const state: GameState = {
-      board: createEmptyBoard(),
-      piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } },
-      score: 0,
-      level: 1,
-      linesCleared: 0,
-      status: "playing",
-    };
+    const state = stateWith({ piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } } });
 
     const next = moveLeft(state);
 
@@ -62,14 +134,7 @@ describe("moveLeft", () => {
   });
 
   it("does not move past the left edge", () => {
-    const state: GameState = {
-      board: createEmptyBoard(),
-      piece: { type: "T", rotation: 0, position: { row: 0, col: 0 } },
-      score: 0,
-      level: 1,
-      linesCleared: 0,
-      status: "playing",
-    };
+    const state = stateWith({ piece: { type: "T", rotation: 0, position: { row: 0, col: 0 } } });
 
     const next = moveLeft(state);
 
@@ -78,31 +143,35 @@ describe("moveLeft", () => {
 
   it("does not move into a settled cell", () => {
     const settled = placePiece(TETROMINOES.O[0], { row: 0, col: 2 }, createEmptyBoard());
-    const state: GameState = {
+    const state = stateWith({
       board: settled,
       piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } },
-      score: 0,
-      level: 1,
-      linesCleared: 0,
-      status: "playing",
-    };
+    });
 
     const next = moveLeft(state);
 
     expect(next).toBe(state);
   });
+
+  it("preserves queue, hold, and canHold", () => {
+    const state = stateWith({
+      piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } },
+      queue: ["I", "O", "S"],
+      hold: "J",
+      canHold: false,
+    });
+
+    const next = moveLeft(state);
+
+    expect(next.queue).toBe(state.queue);
+    expect(next.hold).toBe(state.hold);
+    expect(next.canHold).toBe(state.canHold);
+  });
 });
 
 describe("moveRight", () => {
   it("moves the piece one column right when unobstructed", () => {
-    const state: GameState = {
-      board: createEmptyBoard(),
-      piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } },
-      score: 0,
-      level: 1,
-      linesCleared: 0,
-      status: "playing",
-    };
+    const state = stateWith({ piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } } });
 
     const next = moveRight(state);
 
@@ -111,14 +180,9 @@ describe("moveRight", () => {
   });
 
   it("does not move past the right edge", () => {
-    const state: GameState = {
-      board: createEmptyBoard(),
+    const state = stateWith({
       piece: { type: "T", rotation: 0, position: { row: 0, col: BOARD_WIDTH - 3 } },
-      score: 0,
-      level: 1,
-      linesCleared: 0,
-      status: "playing",
-    };
+    });
 
     const next = moveRight(state);
 
@@ -128,14 +192,7 @@ describe("moveRight", () => {
 
 describe("rotate", () => {
   it("advances to the next rotation state when unobstructed", () => {
-    const state: GameState = {
-      board: createEmptyBoard(),
-      piece: { type: "T", rotation: 0, position: { row: 3, col: 3 } },
-      score: 0,
-      level: 1,
-      linesCleared: 0,
-      status: "playing",
-    };
+    const state = stateWith({ piece: { type: "T", rotation: 0, position: { row: 3, col: 3 } } });
 
     const next = rotate(state);
 
@@ -145,14 +202,7 @@ describe("rotate", () => {
   });
 
   it("wraps from rotation 3 back to 0", () => {
-    const state: GameState = {
-      board: createEmptyBoard(),
-      piece: { type: "T", rotation: 3, position: { row: 3, col: 3 } },
-      score: 0,
-      level: 1,
-      linesCleared: 0,
-      status: "playing",
-    };
+    const state = stateWith({ piece: { type: "T", rotation: 3, position: { row: 3, col: 3 } } });
 
     const next = rotate(state);
 
@@ -160,14 +210,9 @@ describe("rotate", () => {
   });
 
   it("is a no-op when the rotated shape would collide with the board edge", () => {
-    const state: GameState = {
-      board: createEmptyBoard(),
+    const state = stateWith({
       piece: { type: "I", rotation: 1, position: { row: 0, col: BOARD_WIDTH - 3 } },
-      score: 0,
-      level: 1,
-      linesCleared: 0,
-      status: "playing",
-    };
+    });
 
     const next = rotate(state);
 
@@ -176,18 +221,29 @@ describe("rotate", () => {
 
   it("is a no-op when the rotated shape would collide with a settled cell", () => {
     const settled = placePiece([[1]], { row: 5, col: 4 }, createEmptyBoard());
-    const state: GameState = {
+    const state = stateWith({
       board: settled,
       piece: { type: "T", rotation: 0, position: { row: 3, col: 3 } },
-      score: 0,
-      level: 1,
-      linesCleared: 0,
-      status: "playing",
-    };
+    });
 
     const next = rotate(state);
 
     expect(next).toBe(state);
+  });
+
+  it("preserves queue, hold, and canHold", () => {
+    const state = stateWith({
+      piece: { type: "T", rotation: 0, position: { row: 3, col: 3 } },
+      queue: ["I", "O", "S"],
+      hold: "J",
+      canHold: false,
+    });
+
+    const next = rotate(state);
+
+    expect(next.queue).toBe(state.queue);
+    expect(next.hold).toBe(state.hold);
+    expect(next.canHold).toBe(state.canHold);
   });
 });
 
@@ -229,21 +285,19 @@ describe("landingPosition", () => {
 });
 
 describe("hardDrop", () => {
-  const baseState = { score: 0, level: 1, linesCleared: 0, status: "playing" as const };
-
   it("moves the piece straight to its landing position and locks it", () => {
-    const state: GameState = {
-      ...baseState,
-      board: createEmptyBoard(),
+    const state = stateWith({
       piece: { type: "O", rotation: 0, position: { row: 0, col: 4 } },
-    };
+      queue: ["L", "S", "T", "J"],
+    });
 
-    const next = hardDrop(state, randomFor("L"));
+    const next = hardDrop(state);
 
     expect(next.board).toEqual(
       placePiece(TETROMINOES.O[0], { row: BOARD_HEIGHT - 2, col: 4 }, state.board),
     );
-    expect(next.piece).toEqual(spawnPiece(randomFor("L")));
+    expect(next.piece).toEqual(spawnPiece("L"));
+    expect(next.queue).toEqual(["S", "T", "J"]);
   });
 
   it("clears completed rows and awards score the same as a normal lock", () => {
@@ -251,29 +305,37 @@ describe("hardDrop", () => {
     board = fillRow(board, BOARD_HEIGHT - 1).map((row, index) =>
       index === BOARD_HEIGHT - 1 ? row.map((_, col) => (col === 4 || col === 5 ? 0 : 1) as const) : row,
     );
-    const state: GameState = {
-      ...baseState,
+    const state = stateWith({
       board,
       piece: { type: "O", rotation: 0, position: { row: 0, col: 4 } },
-    };
+      queue: ["L", "S", "T", "J"],
+    });
 
-    const next = hardDrop(state, randomFor("L"));
+    const next = hardDrop(state);
 
     expect(next.linesCleared).toBe(1);
     expect(next.score).toBe(100);
     expect(next.level).toBe(1);
   });
+
+  it("resets canHold to true and leaves the hold slot untouched", () => {
+    const state = stateWith({
+      piece: { type: "O", rotation: 0, position: { row: 0, col: 4 } },
+      queue: ["L", "S", "T", "J"],
+      hold: "I",
+      canHold: false,
+    });
+
+    const next = hardDrop(state);
+
+    expect(next.canHold).toBe(true);
+    expect(next.hold).toBe("I");
+  });
 });
 
 describe("step", () => {
-  const baseState = { score: 0, level: 1, linesCleared: 0, status: "playing" as const };
-
   it("moves the piece down one row when the row below is clear", () => {
-    const state: GameState = {
-      ...baseState,
-      board: createEmptyBoard(),
-      piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } },
-    };
+    const state = stateWith({ piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } } });
 
     const next = step(state);
 
@@ -288,53 +350,49 @@ describe("step", () => {
   it("does not mutate the board passed in", () => {
     const board = createEmptyBoard();
     const snapshot = board.map((row) => [...row]);
-    step({
-      ...baseState,
-      board,
-      piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } },
-    });
+    step(stateWith({ board, piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } } }));
     expect(board).toEqual(snapshot);
   });
 
   it("locks the piece and spawns a new one when the drop is blocked by the floor", () => {
     const shape = TETROMINOES.O[0];
     const position = { row: BOARD_HEIGHT - 2, col: 4 };
-    const state: GameState = {
-      ...baseState,
-      board: createEmptyBoard(),
+    const state = stateWith({
       piece: { type: "O", rotation: 0, position },
-    };
+      queue: ["L", "S", "T", "J"],
+    });
 
-    const next = step(state, randomFor("L"));
+    const next = step(state);
 
     expect(next.board).toEqual(placePiece(shape, position, state.board));
-    expect(next.piece).toEqual(spawnPiece(randomFor("L")));
+    expect(next.piece).toEqual(spawnPiece("L"));
+    expect(next.queue).toEqual(["S", "T", "J"]);
   });
 
   it("locks the piece and spawns a new one when the drop is blocked by another piece", () => {
     const settled = placePiece(TETROMINOES.O[0], { row: 10, col: 4 }, createEmptyBoard());
     const position = { row: 8, col: 4 };
-    const state: GameState = {
-      ...baseState,
+    const state = stateWith({
       board: settled,
       piece: { type: "O", rotation: 0, position },
-    };
+      queue: ["I", "S", "T", "J"],
+    });
 
-    const next = step(state, randomFor("I"));
+    const next = step(state);
 
     expect(next.board).toEqual(placePiece(TETROMINOES.O[0], position, settled));
-    expect(next.piece).toEqual(spawnPiece(randomFor("I")));
+    expect(next.piece).toEqual(spawnPiece("I"));
+    expect(next.queue).toEqual(["S", "T", "J"]);
   });
 
   it("does not clear rows or award score when locking a piece completes nothing", () => {
     const position = { row: BOARD_HEIGHT - 2, col: 4 };
-    const state: GameState = {
-      ...baseState,
-      board: createEmptyBoard(),
+    const state = stateWith({
       piece: { type: "O", rotation: 0, position },
-    };
+      queue: ["L", "S", "T", "J"],
+    });
 
-    const next = step(state, randomFor("L"));
+    const next = step(state);
 
     expect(next.score).toBe(0);
     expect(next.linesCleared).toBe(0);
@@ -347,13 +405,13 @@ describe("step", () => {
       index === BOARD_HEIGHT - 1 ? row.map((_, col) => (col === 4 || col === 5 ? 0 : 1) as const) : row,
     );
     const position = { row: BOARD_HEIGHT - 2, col: 4 };
-    const state: GameState = {
-      ...baseState,
+    const state = stateWith({
       board,
       piece: { type: "O", rotation: 0, position },
-    };
+      queue: ["L", "S", "T", "J"],
+    });
 
-    const next = step(state, randomFor("L"));
+    const next = step(state);
 
     expect(next.linesCleared).toBe(1);
     expect(next.score).toBe(100);
@@ -369,13 +427,13 @@ describe("step", () => {
       );
     }
     const position = { row: BOARD_HEIGHT - 2, col: 4 };
-    const state: GameState = {
-      ...baseState,
+    const state = stateWith({
       board,
       piece: { type: "O", rotation: 0, position },
-    };
+      queue: ["L", "S", "T", "J"],
+    });
 
-    const next = step(state, randomFor("L"));
+    const next = step(state);
 
     expect(next.linesCleared).toBe(2);
     expect(next.score).toBe(300);
@@ -387,16 +445,14 @@ describe("step", () => {
       index === BOARD_HEIGHT - 1 ? row.map((_, col) => (col === 4 || col === 5 ? 0 : 1) as const) : row,
     );
     const position = { row: BOARD_HEIGHT - 2, col: 4 };
-    const state: GameState = {
-      score: 0,
-      level: 1,
-      linesCleared: 9,
-      status: "playing",
+    const state = stateWith({
       board,
       piece: { type: "O", rotation: 0, position },
-    };
+      queue: ["L", "S", "T", "J"],
+      linesCleared: 9,
+    });
 
-    const next = step(state, randomFor("L"));
+    const next = step(state);
 
     expect(next.linesCleared).toBe(10);
     expect(next.level).toBe(2);
@@ -408,41 +464,41 @@ describe("step", () => {
       index === BOARD_HEIGHT - 1 ? row.map((_, col) => (col === 4 || col === 5 ? 0 : 1) as const) : row,
     );
     const position = { row: BOARD_HEIGHT - 2, col: 4 };
-    const state: GameState = {
+    const state = stateWith({
+      board,
+      piece: { type: "O", rotation: 0, position },
+      queue: ["L", "S", "T", "J"],
       score: 500,
       level: 3,
       linesCleared: 20,
-      status: "playing",
-      board,
-      piece: { type: "O", rotation: 0, position },
-    };
+    });
 
-    const next = step(state, randomFor("L"));
+    const next = step(state);
 
     expect(next.score).toBe(500 + 100 * 3);
   });
 
   it("sets status to gameOver when the newly spawned piece has no room", () => {
     const toppedOut = placePiece(TETROMINOES.O[0], { row: 0, col: 4 }, createEmptyBoard());
-    const state: GameState = {
-      ...baseState,
+    const state = stateWith({
       board: toppedOut,
       piece: { type: "O", rotation: 0, position: { row: BOARD_HEIGHT - 2, col: 0 } },
-    };
+      queue: ["O", "S", "Z", "L"],
+    });
 
-    const next = step(state, randomFor("O"));
+    const next = step(state);
 
     expect(next.status).toBe("gameOver");
   });
 
   it("keeps status playing when the newly spawned piece has room", () => {
-    const state: GameState = {
-      ...baseState,
+    const state = stateWith({
       board: createEmptyBoard(),
       piece: { type: "O", rotation: 0, position: { row: BOARD_HEIGHT - 2, col: 0 } },
-    };
+      queue: ["O", "S", "Z", "L"],
+    });
 
-    const next = step(state, randomFor("O"));
+    const next = step(state);
 
     expect(next.status).toBe("playing");
   });
@@ -452,25 +508,17 @@ describe("no-ops when the game is not playing", () => {
   const notPlayingStates: [string, GameState][] = [
     [
       "paused",
-      {
-        board: createEmptyBoard(),
+      stateWith({
         piece: { type: "T", rotation: 0, position: { row: 3, col: 3 } },
-        score: 0,
-        level: 1,
-        linesCleared: 0,
         status: "paused",
-      },
+      }),
     ],
     [
       "gameOver",
-      {
-        board: createEmptyBoard(),
+      stateWith({
         piece: { type: "T", rotation: 0, position: { row: 3, col: 3 } },
-        score: 0,
-        level: 1,
-        linesCleared: 0,
         status: "gameOver",
-      },
+      }),
     ],
   ];
 
@@ -496,14 +544,7 @@ describe("no-ops when the game is not playing", () => {
 });
 
 describe("togglePause", () => {
-  const state: GameState = {
-    board: createEmptyBoard(),
-    piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } },
-    score: 0,
-    level: 1,
-    linesCleared: 0,
-    status: "playing",
-  };
+  const state = stateWith({ piece: { type: "T", rotation: 0, position: { row: 0, col: 3 } } });
 
   it("pauses a playing game", () => {
     expect(togglePause(state).status).toBe("paused");
@@ -522,20 +563,86 @@ describe("togglePause", () => {
 
 describe("restart", () => {
   it("returns a fresh playing state built the same way as the initial state", () => {
-    const next = restart(randomFor("T"));
-
-    expect(next).toEqual({
-      board: createEmptyBoard(),
-      piece: spawnPiece(randomFor("T")),
-      score: 0,
-      level: 1,
-      linesCleared: 0,
-      status: "playing",
-    });
+    expect(restart(() => 0)).toEqual(createGameState(() => 0));
   });
 
   it("resets a game regardless of its previous status", () => {
-    expect(restart(randomFor("T")).status).toBe("playing");
+    expect(restart().status).toBe("playing");
+  });
+});
+
+describe("holdPiece", () => {
+  it("moves the active piece into an empty hold slot and draws the next piece from the queue", () => {
+    const state = stateWith({
+      piece: { type: "T", rotation: 2, position: { row: 5, col: 3 } },
+      queue: ["L", "S", "J", "I"],
+      hold: null,
+      canHold: true,
+    });
+
+    const next = holdPiece(state);
+
+    expect(next.hold).toBe("T");
+    expect(next.piece).toEqual(spawnPiece("L"));
+    expect(next.queue).toEqual(["S", "J", "I"]);
+    expect(next.canHold).toBe(false);
+  });
+
+  it("swaps the active piece with an occupied hold slot without touching the queue", () => {
+    const state = stateWith({
+      piece: { type: "T", rotation: 2, position: { row: 5, col: 3 } },
+      queue: ["L", "S", "J", "I"],
+      hold: "O",
+      canHold: true,
+    });
+
+    const next = holdPiece(state);
+
+    expect(next.hold).toBe("T");
+    expect(next.piece).toEqual(spawnPiece("O"));
+    expect(next.queue).toEqual(state.queue);
+    expect(next.canHold).toBe(false);
+  });
+
+  it("resets the swapped-out piece to its spawn rotation and position", () => {
+    const state = stateWith({
+      piece: { type: "T", rotation: 2, position: { row: 5, col: 3 } },
+      queue: ["L", "S", "J", "I"],
+      hold: "O",
+    });
+
+    const next = holdPiece(state);
+
+    expect(next.piece.rotation).toBe(0);
+    expect(next.piece.position).toEqual(spawnPiece("O").position);
+  });
+
+  it("is a no-op when hold has already been used for this piece", () => {
+    const state = stateWith({
+      piece: { type: "T", rotation: 0, position: { row: 5, col: 3 } },
+      queue: ["L", "S", "J", "I"],
+      hold: "O",
+      canHold: false,
+    });
+
+    const next = holdPiece(state);
+
+    expect(next).toBe(state);
+  });
+
+  it("is available again after the piece locks", () => {
+    const held = holdPiece(
+      stateWith({
+        piece: { type: "T", rotation: 0, position: { row: 5, col: 3 } },
+        queue: ["L", "S", "J", "I"],
+      }),
+    );
+    expect(held.canHold).toBe(false);
+
+    const position = { row: BOARD_HEIGHT - 2, col: 4 };
+    const locked = hardDrop({ ...held, piece: { ...held.piece, position } });
+
+    expect(locked.canHold).toBe(true);
   });
 });
 

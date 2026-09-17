@@ -1,16 +1,26 @@
 import {
+  createGameState,
   dropIntervalForLevel,
   hardDrop,
+  holdPiece,
   landingPosition,
   moveLeft,
   moveRight,
+  NEXT_QUEUE_SIZE,
   restart,
   rotate,
   step,
   togglePause,
   type GameState,
 } from "./game";
-import { drawBoard, drawGhostPiece, drawOverlayText, drawPiece, sizeCanvas } from "./render";
+import {
+  drawBoard,
+  drawGhostPiece,
+  drawOverlayText,
+  drawPiece,
+  drawSidePanel,
+  sizeCanvas,
+} from "./render";
 import { TETROMINOES } from "./tetromino";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -25,7 +35,7 @@ sizeCanvas(canvas);
 
 const ctx = canvas.getContext("2d");
 
-let state: GameState = restart();
+let state: GameState = createGameState();
 
 function render(): void {
   if (!ctx) return;
@@ -33,6 +43,7 @@ function render(): void {
   drawBoard(ctx, state.board);
   drawGhostPiece(ctx, shape, landingPosition(state.piece, state.board));
   drawPiece(ctx, shape, state.piece.position);
+  drawSidePanel(ctx, state.hold, state.queue.slice(0, NEXT_QUEUE_SIZE));
 
   if (state.status === "paused") {
     drawOverlayText(ctx, "Paused");
@@ -72,6 +83,10 @@ document.addEventListener("keydown", (event) => {
       break;
     case " ":
       state = hardDrop(state);
+      break;
+    case "c":
+    case "C":
+      state = holdPiece(state);
       break;
     case "p":
       state = togglePause(state);
