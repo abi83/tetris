@@ -1,9 +1,7 @@
 import { createEmptyBoard } from "./board";
-import { moveLeft, moveRight, rotate, spawnPiece, step, type GameState } from "./game";
+import { dropIntervalForLevel, moveLeft, moveRight, rotate, spawnPiece, step, type GameState } from "./game";
 import { drawBoard, drawPiece, sizeCanvas } from "./render";
 import { TETROMINOES } from "./tetromino";
-
-const DROP_INTERVAL_MS = 1000;
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -17,7 +15,13 @@ sizeCanvas(canvas);
 
 const ctx = canvas.getContext("2d");
 
-let state: GameState = { board: createEmptyBoard(), piece: spawnPiece() };
+let state: GameState = {
+  board: createEmptyBoard(),
+  piece: spawnPiece(),
+  score: 0,
+  level: 1,
+  linesCleared: 0,
+};
 
 function render(): void {
   if (!ctx) return;
@@ -30,10 +34,19 @@ function render(): void {
 }
 
 render();
-setInterval(() => {
+
+let dropIntervalId = setInterval(tick, dropIntervalForLevel(state.level));
+
+function tick(): void {
+  const previousLevel = state.level;
   state = step(state);
   render();
-}, DROP_INTERVAL_MS);
+
+  if (state.level !== previousLevel) {
+    clearInterval(dropIntervalId);
+    dropIntervalId = setInterval(tick, dropIntervalForLevel(state.level));
+  }
+}
 
 document.addEventListener("keydown", (event) => {
   switch (event.key) {

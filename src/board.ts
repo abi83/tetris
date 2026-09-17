@@ -63,3 +63,13 @@ export function filledRows(board: Grid): number[] {
   });
   return rows;
 }
+
+export function clearRows(board: Grid): Grid {
+  const full = new Set(filledRows(board));
+  const remaining = board.filter((_, index) => !full.has(index));
+  const emptyRows = Array.from({ length: board.length - remaining.length }, () =>
+    Array.from({ length: BOARD_WIDTH }, () => 0 as Cell),
+  );
+
+  return [...emptyRows, ...remaining];
+}

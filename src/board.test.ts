@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BOARD_HEIGHT,
   BOARD_WIDTH,
+  clearRows,
   createEmptyBoard,
   filledRows,
   hasCollision,
@@ -112,5 +113,54 @@ describe("filledRows", () => {
       index === 0 ? row.map((_, col) => (col === 3 ? 0 : 1) as const) : row,
     );
     expect(filledRows(board)).toEqual([]);
+  });
+});
+
+describe("clearRows", () => {
+  it("returns an equivalent board when no rows are full", () => {
+    const board = placePiece(TETROMINOES.T[0], { row: 5, col: 3 }, createEmptyBoard());
+    expect(clearRows(board)).toEqual(board);
+  });
+
+  it("removes a single full row and inserts an empty row at the top", () => {
+    const board = fillRow(createEmptyBoard(), 19);
+    const cleared = clearRows(board);
+
+    expect(cleared).toHaveLength(BOARD_HEIGHT);
+    expect(cleared[0]).toEqual(Array(BOARD_WIDTH).fill(0));
+    expect(filledRows(cleared)).toEqual([]);
+  });
+
+  it("shifts rows above a cleared row down by one", () => {
+    let board = createEmptyBoard();
+    board = placePiece(TETROMINOES.T[0], { row: 5, col: 3 }, board);
+    board = fillRow(board, 19);
+
+    const cleared = clearRows(board);
+
+    expect(cleared[6]).toEqual(placePiece(TETROMINOES.T[0], { row: 5, col: 3 }, createEmptyBoard())[5]);
+  });
+
+  it("clears multiple full rows at once and backfills that many empty rows", () => {
+    let board = fillRow(createEmptyBoard(), 17);
+    board = fillRow(board, 18);
+    board = fillRow(board, 19);
+
+    const cleared = clearRows(board);
+
+    expect(cleared).toHaveLength(BOARD_HEIGHT);
+    expect(cleared.slice(0, 3)).toEqual([
+      Array(BOARD_WIDTH).fill(0),
+      Array(BOARD_WIDTH).fill(0),
+      Array(BOARD_WIDTH).fill(0),
+    ]);
+    expect(filledRows(cleared)).toEqual([]);
+  });
+
+  it("does not mutate the board passed in", () => {
+    const board = fillRow(createEmptyBoard(), 19);
+    const snapshot = board.map((row) => [...row]);
+    clearRows(board);
+    expect(board).toEqual(snapshot);
   });
 });
