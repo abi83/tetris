@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { BOARD_HEIGHT, BOARD_WIDTH, createEmptyBoard, placePiece } from "./board";
-import { dropIntervalForLevel, moveLeft, moveRight, rotate, spawnPiece, step, type GameState } from "./game";
+import {
+  dropIntervalForLevel,
+  hardDrop,
+  landingPosition,
+  moveLeft,
+  moveRight,
+  rotate,
+  spawnPiece,
+  step,
+  type GameState,
+} from "./game";
 import { TETROMINOES, TETROMINO_TYPES } from "./tetromino";
 
 function randomFor(type: (typeof TETROMINO_TYPES)[number]): () => number {
@@ -140,6 +150,80 @@ describe("rotate", () => {
     const next = rotate(state);
 
     expect(next).toBe(state);
+  });
+});
+
+describe("landingPosition", () => {
+  it("drops straight to the floor on an empty board", () => {
+    const piece = { type: "O", rotation: 0, position: { row: 0, col: 4 } } as const;
+
+    expect(landingPosition(piece, createEmptyBoard())).toEqual({
+      row: BOARD_HEIGHT - 2,
+      col: 4,
+    });
+  });
+
+  it("stops on top of settled cells", () => {
+    const settled = placePiece(TETROMINOES.O[0], { row: 15, col: 4 }, createEmptyBoard());
+    const piece = { type: "O", rotation: 0, position: { row: 0, col: 4 } } as const;
+
+    expect(landingPosition(piece, settled)).toEqual({ row: 13, col: 4 });
+  });
+
+  it("tracks the piece's current column and rotation", () => {
+    const piece = { type: "I", rotation: 1, position: { row: 0, col: 6 } } as const;
+
+    expect(landingPosition(piece, createEmptyBoard())).toEqual({
+      row: BOARD_HEIGHT - 4,
+      col: 6,
+    });
+  });
+
+  it("does not mutate the board passed in", () => {
+    const board = createEmptyBoard();
+    const snapshot = board.map((row) => [...row]);
+    const piece = { type: "T", rotation: 0, position: { row: 0, col: 3 } } as const;
+
+    landingPosition(piece, board);
+
+    expect(board).toEqual(snapshot);
+  });
+});
+
+describe("hardDrop", () => {
+  const baseState = { score: 0, level: 1, linesCleared: 0 };
+
+  it("moves the piece straight to its landing position and locks it", () => {
+    const state: GameState = {
+      ...baseState,
+      board: createEmptyBoard(),
+      piece: { type: "O", rotation: 0, position: { row: 0, col: 4 } },
+    };
+
+    const next = hardDrop(state, randomFor("L"));
+
+    expect(next.board).toEqual(
+      placePiece(TETROMINOES.O[0], { row: BOARD_HEIGHT - 2, col: 4 }, state.board),
+    );
+    expect(next.piece).toEqual(spawnPiece(randomFor("L")));
+  });
+
+  it("clears completed rows and awards score the same as a normal lock", () => {
+    let board = createEmptyBoard();
+    board = fillRow(board, BOARD_HEIGHT - 1).map((row, index) =>
+      index === BOARD_HEIGHT - 1 ? row.map((_, col) => (col === 4 || col === 5 ? 0 : 1) as const) : row,
+    );
+    const state: GameState = {
+      ...baseState,
+      board,
+      piece: { type: "O", rotation: 0, position: { row: 0, col: 4 } },
+    };
+
+    const next = hardDrop(state, randomFor("L"));
+
+    expect(next.linesCleared).toBe(1);
+    expect(next.score).toBe(100);
+    expect(next.level).toBe(1);
   });
 });
 

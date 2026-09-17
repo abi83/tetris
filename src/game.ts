@@ -77,6 +77,39 @@ export function rotate(state: GameState): GameState {
   return { board: state.board, piece: { ...state.piece, rotation } };
 }
 
+// Repeatedly applies hasCollision to find the lowest legal row for the
+// piece's current column/rotation, without mutating the piece or board.
+export function landingPosition(piece: ActivePiece, board: Grid): Position {
+  const shape = TETROMINOES[piece.type][piece.rotation];
+  let position = piece.position;
+
+  while (!hasCollision(shape, { row: position.row + 1, col: position.col }, board)) {
+    position = { row: position.row + 1, col: position.col };
+  }
+
+  return position;
+}
+
+function lockPiece(
+  state: GameState,
+  shape: Grid,
+  position: Position,
+  random: () => number,
+): GameState {
+  const lockedBoard = placePiece(shape, position, state.board);
+  const clearedRowCount = filledRows(lockedBoard).length;
+  const board = clearRows(lockedBoard);
+  const linesCleared = state.linesCleared + clearedRowCount;
+
+  return {
+    board,
+    piece: spawnPiece(random),
+    score: state.score + LINE_CLEAR_SCORES[clearedRowCount] * state.level,
+    level: Math.floor(linesCleared / LINES_PER_LEVEL) + 1,
+    linesCleared,
+  };
+}
+
 export function step(
   state: GameState,
   random: () => number = Math.random,
@@ -94,16 +127,15 @@ export function step(
     };
   }
 
-  const lockedBoard = placePiece(shape, state.piece.position, state.board);
-  const clearedRowCount = filledRows(lockedBoard).length;
-  const board = clearRows(lockedBoard);
-  const linesCleared = state.linesCleared + clearedRowCount;
+  return lockPiece(state, shape, state.piece.position, random);
+}
 
-  return {
-    board,
-    piece: spawnPiece(random),
-    score: state.score + LINE_CLEAR_SCORES[clearedRowCount] * state.level,
-    level: Math.floor(linesCleared / LINES_PER_LEVEL) + 1,
-    linesCleared,
-  };
+export function hardDrop(
+  state: GameState,
+  random: () => number = Math.random,
+): GameState {
+  const shape = TETROMINOES[state.piece.type][state.piece.rotation];
+  const position = landingPosition(state.piece, state.board);
+
+  return lockPiece(state, shape, position, random);
 }

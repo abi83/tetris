@@ -1,6 +1,16 @@
 import { createEmptyBoard } from "./board";
-import { dropIntervalForLevel, moveLeft, moveRight, rotate, spawnPiece, step, type GameState } from "./game";
-import { drawBoard, drawPiece, sizeCanvas } from "./render";
+import {
+  dropIntervalForLevel,
+  hardDrop,
+  landingPosition,
+  moveLeft,
+  moveRight,
+  rotate,
+  spawnPiece,
+  step,
+  type GameState,
+} from "./game";
+import { drawBoard, drawGhostPiece, drawPiece, sizeCanvas } from "./render";
 import { TETROMINOES } from "./tetromino";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -25,12 +35,10 @@ let state: GameState = {
 
 function render(): void {
   if (!ctx) return;
+  const shape = TETROMINOES[state.piece.type][state.piece.rotation];
   drawBoard(ctx, state.board);
-  drawPiece(
-    ctx,
-    TETROMINOES[state.piece.type][state.piece.rotation],
-    state.piece.position,
-  );
+  drawGhostPiece(ctx, shape, landingPosition(state.piece, state.board));
+  drawPiece(ctx, shape, state.piece.position);
 }
 
 render();
@@ -61,6 +69,9 @@ document.addEventListener("keydown", (event) => {
       break;
     case "ArrowDown":
       state = step(state);
+      break;
+    case " ":
+      state = hardDrop(state);
       break;
     default:
       return;
