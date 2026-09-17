@@ -27,6 +27,17 @@ export interface GameState {
   level: number;
   linesCleared: number;
   status: GameStatus;
+  // Rows cleared by the most recent lock, for the renderer to flash. Set by
+  // lockPiece, held through one render, then cleared on the next step().
+  clearedRows: readonly number[];
+  // Cells of the piece that just locked, for the renderer's lock pulse. Same
+  // lifetime as clearedRows.
+  lockedCells: readonly Position[];
+  // Board as it looked right after the lock but before clearedRows were
+  // removed, so the renderer can flash the completed rows in place before
+  // they collapse. clearedRows indexes into this board, not `board`. Same
+  // lifetime as clearedRows; null when the lock didn't clear any rows.
+  preClearBoard: Grid | null;
 }
 
 export const LINES_PER_LEVEL = 10;
@@ -96,6 +107,9 @@ export function createGameState(random: () => number = Math.random): GameState {
     level: 1,
     linesCleared: 0,
     status: "playing",
+    clearedRows: [],
+    lockedCells: [],
+    preClearBoard: null,
   };
 }
 
@@ -165,6 +179,19 @@ export function landingPosition(piece: ActivePiece, board: Grid): Position {
   return position;
 }
 
+// Cells the given shape occupies once placed at position, in board coordinates.
+function occupiedCells(shape: Grid, position: Position): Position[] {
+  const cells: Position[] = [];
+  for (let r = 0; r < shape.length; r++) {
+    for (let c = 0; c < shape[r].length; c++) {
+      if (shape[r][c] !== 0) {
+        cells.push({ row: position.row + r, col: position.col + c });
+      }
+    }
+  }
+  return cells;
+}
+
 function lockPiece(
   state: GameState,
   shape: Grid,
@@ -172,9 +199,9 @@ function lockPiece(
   random: () => number,
 ): GameState {
   const lockedBoard = placePiece(shape, position, state.board);
-  const clearedRowCount = filledRows(lockedBoard).length;
+  const clearedRows = filledRows(lockedBoard);
   const board = clearRows(lockedBoard);
-  const linesCleared = state.linesCleared + clearedRowCount;
+  const linesCleared = state.linesCleared + clearedRows.length;
   const { type, queue } = drawPiece(state.queue, random);
   const piece = spawnPiece(type);
   const pieceShape = TETROMINOES[piece.type][piece.rotation];
@@ -188,10 +215,13 @@ function lockPiece(
     queue,
     hold: state.hold,
     canHold: true,
-    score: state.score + LINE_CLEAR_SCORES[clearedRowCount] * state.level,
+    score: state.score + LINE_CLEAR_SCORES[clearedRows.length] * state.level,
     level: Math.floor(linesCleared / LINES_PER_LEVEL) + 1,
     linesCleared,
     status,
+    clearedRows,
+    lockedCells: occupiedCells(shape, position),
+    preClearBoard: clearedRows.length > 0 ? lockedBoard : null,
   };
 }
 
@@ -213,6 +243,9 @@ export function step(
     return {
       ...state,
       piece: { ...state.piece, position: droppedPosition },
+      clearedRows: [],
+      lockedCells: [],
+      preClearBoard: null,
     };
   }
 
