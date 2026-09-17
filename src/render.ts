@@ -7,6 +7,7 @@ const BACKGROUND_COLOR = "#111827";
 const GRID_LINE_COLOR = "#374151";
 const BOARD_CELL_COLOR = "#6b7280";
 const PIECE_COLOR = "#38bdf8";
+const GHOST_COLOR = "rgba(56, 189, 248, 0.5)";
 
 export function sizeCanvas(canvas: HTMLCanvasElement): void {
   canvas.width = BOARD_WIDTH * CELL_SIZE;
@@ -37,6 +38,25 @@ export function drawPiece(
     for (let col = 0; col < shape[row].length; col++) {
       if (shape[row][col] !== 0) {
         drawCell(ctx, position.row + row, position.col + col, PIECE_COLOR);
+      }
+    }
+  }
+}
+
+export function drawGhostPiece(
+  ctx: CanvasRenderingContext2D,
+  shape: Grid,
+  position: Position,
+): void {
+  ctx.strokeStyle = GHOST_COLOR;
+  ctx.lineWidth = 2;
+
+  for (let row = 0; row < shape.length; row++) {
+    for (let col = 0; col < shape[row].length; col++) {
+      if (shape[row][col] !== 0) {
+        const x = (position.col + col) * CELL_SIZE;
+        const y = (position.row + row) * CELL_SIZE;
+        ctx.strokeRect(x + 1, y + 1, CELL_SIZE - 2, CELL_SIZE - 2);
       }
     }
   }
