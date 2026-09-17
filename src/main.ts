@@ -15,10 +15,13 @@ import {
 } from "./game";
 import {
   drawBoard,
+  drawClearedRowsFlash,
   drawGhostPiece,
+  drawLockedCellsFlash,
   drawOverlayText,
   drawPiece,
   drawSidePanel,
+  FLASH_DURATION_MS,
   sizeCanvas,
 } from "./render";
 import { TETROMINOES } from "./tetromino";
@@ -37,12 +40,53 @@ const ctx = canvas.getContext("2d");
 
 let state: GameState = createGameState();
 
+// Timestamps marking when the current clearedRows/lockedCells flash began,
+// so render() can fade it out independently of how often game state changes.
+let clearFlashStartedAt: number | null = null;
+let lockFlashStartedAt: number | null = null;
+
+function setState(next: GameState): void {
+  if (next.clearedRows.length > 0 && next.clearedRows !== state.clearedRows) {
+    clearFlashStartedAt = performance.now();
+  }
+  if (next.lockedCells.length > 0 && next.lockedCells !== state.lockedCells) {
+    lockFlashStartedAt = performance.now();
+  }
+  state = next;
+}
+
 function render(): void {
   if (!ctx) return;
   const shape = TETROMINOES[state.piece.type][state.piece.rotation];
-  drawBoard(ctx, state.board);
+
+  // While the flash plays, draw the board as it looked right after the lock
+  // (rows not yet collapsed) so clearedRows highlights the rows that were
+  // actually completed, at the position they were completed at.
+  const clearProgress =
+    clearFlashStartedAt === null ? null : (performance.now() - clearFlashStartedAt) / FLASH_DURATION_MS;
+  const showPreClearBoard = clearProgress !== null && clearProgress < 1 && state.preClearBoard !== null;
+
+  drawBoard(ctx, showPreClearBoard ? state.preClearBoard! : state.board);
   drawGhostPiece(ctx, shape, landingPosition(state.piece, state.board));
   drawPiece(ctx, shape, state.piece.position);
+
+  if (clearProgress !== null) {
+    if (clearProgress < 1) {
+      drawClearedRowsFlash(ctx, state.clearedRows, clearProgress);
+    } else {
+      clearFlashStartedAt = null;
+    }
+  }
+
+  if (lockFlashStartedAt !== null) {
+    const progress = (performance.now() - lockFlashStartedAt) / FLASH_DURATION_MS;
+    if (progress < 1) {
+      drawLockedCellsFlash(ctx, state.lockedCells, progress);
+    } else {
+      lockFlashStartedAt = null;
+    }
+  }
+
   drawSidePanel(ctx, state.hold, state.queue.slice(0, NEXT_QUEUE_SIZE));
 
   if (state.status === "paused") {
@@ -52,14 +96,18 @@ function render(): void {
   }
 }
 
-render();
+function animate(): void {
+  render();
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
 
 let dropIntervalId = setInterval(tick, dropIntervalForLevel(state.level));
 
 function tick(): void {
   const previousLevel = state.level;
-  state = step(state);
-  render();
+  setState(step(state));
 
   if (state.level !== previousLevel) {
     clearInterval(dropIntervalId);
@@ -70,32 +118,31 @@ function tick(): void {
 document.addEventListener("keydown", (event) => {
   switch (event.key) {
     case "ArrowLeft":
-      state = moveLeft(state);
+      setState(moveLeft(state));
       break;
     case "ArrowRight":
-      state = moveRight(state);
+      setState(moveRight(state));
       break;
     case "ArrowUp":
-      state = rotate(state);
+      setState(rotate(state));
       break;
     case "ArrowDown":
-      state = step(state);
+      setState(step(state));
       break;
     case " ":
-      state = hardDrop(state);
+      setState(hardDrop(state));
       break;
     case "c":
     case "C":
-      state = holdPiece(state);
+      setState(holdPiece(state));
       break;
     case "p":
-      state = togglePause(state);
+      setState(togglePause(state));
       break;
     case "r":
-      state = restart();
+      setState(restart());
       break;
     default:
       return;
   }
-  render();
 });

@@ -16,6 +16,11 @@ const PANEL_BACKGROUND_COLOR = "#1f2937";
 const PANEL_LABEL_COLOR = "#9ca3af";
 const OVERLAY_BACKGROUND_COLOR = "rgba(17, 24, 39, 0.75)";
 const OVERLAY_TEXT_COLOR = "#f9fafb";
+const CLEAR_FLASH_COLOR = "249, 250, 251";
+const LOCK_FLASH_COLOR = "255, 255, 255";
+
+// How long the line-clear/lock flash takes to fade out, in milliseconds.
+export const FLASH_DURATION_MS = 250;
 
 export function sizeCanvas(canvas: HTMLCanvasElement): void {
   canvas.width = BOARD_WIDTH * CELL_SIZE + SIDE_PANEL_WIDTH;
@@ -67,6 +72,34 @@ export function drawGhostPiece(
         ctx.strokeRect(x + 1, y + 1, CELL_SIZE - 2, CELL_SIZE - 2);
       }
     }
+  }
+}
+
+// progress runs from 0 (just cleared, fully opaque) to 1 (faded out).
+export function drawClearedRowsFlash(
+  ctx: CanvasRenderingContext2D,
+  rows: readonly number[],
+  progress: number,
+): void {
+  const alpha = 1 - progress;
+  ctx.fillStyle = `rgba(${CLEAR_FLASH_COLOR}, ${alpha})`;
+
+  for (const row of rows) {
+    ctx.fillRect(0, row * CELL_SIZE, BOARD_WIDTH * CELL_SIZE, CELL_SIZE);
+  }
+}
+
+// progress runs from 0 (just locked, fully opaque) to 1 (faded out).
+export function drawLockedCellsFlash(
+  ctx: CanvasRenderingContext2D,
+  cells: readonly Position[],
+  progress: number,
+): void {
+  const alpha = 1 - progress;
+  ctx.fillStyle = `rgba(${LOCK_FLASH_COLOR}, ${alpha})`;
+
+  for (const cell of cells) {
+    ctx.fillRect(cell.col * CELL_SIZE, cell.row * CELL_SIZE, CELL_SIZE, CELL_SIZE);
   }
 }
 

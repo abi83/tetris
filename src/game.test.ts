@@ -30,6 +30,9 @@ function stateWith(overrides: Partial<GameState> = {}): GameState {
     level: 1,
     linesCleared: 0,
     status: "playing",
+    clearedRows: [],
+    lockedCells: [],
+    preClearBoard: null,
     ...overrides,
   };
 }
@@ -501,6 +504,125 @@ describe("step", () => {
     const next = step(state);
 
     expect(next.status).toBe("playing");
+  });
+});
+
+describe("clearedRows and lockedCells (line-clear/lock flash state)", () => {
+  it("sets lockedCells to the cells of the piece that just locked, with no cleared rows", () => {
+    const position = { row: BOARD_HEIGHT - 2, col: 4 };
+    const state = stateWith({
+      piece: { type: "O", rotation: 0, position },
+      queue: ["L", "S", "T", "J"],
+    });
+
+    const next = step(state);
+
+    expect(next.clearedRows).toEqual([]);
+    expect(next.lockedCells.slice().sort((a, b) => a.row - b.row || a.col - b.col)).toEqual(
+      [
+        { row: BOARD_HEIGHT - 2, col: 4 },
+        { row: BOARD_HEIGHT - 2, col: 5 },
+        { row: BOARD_HEIGHT - 1, col: 4 },
+        { row: BOARD_HEIGHT - 1, col: 5 },
+      ].sort((a, b) => a.row - b.row || a.col - b.col),
+    );
+  });
+
+  it("sets clearedRows to the rows cleared by a lock", () => {
+    let board = createEmptyBoard();
+    board = fillRow(board, BOARD_HEIGHT - 1).map((row, index) =>
+      index === BOARD_HEIGHT - 1 ? row.map((_, col) => (col === 4 || col === 5 ? 0 : 1) as const) : row,
+    );
+    const position = { row: BOARD_HEIGHT - 2, col: 4 };
+    const state = stateWith({
+      board,
+      piece: { type: "O", rotation: 0, position },
+      queue: ["L", "S", "T", "J"],
+    });
+
+    const next = step(state);
+
+    expect(next.clearedRows).toEqual([BOARD_HEIGHT - 1]);
+  });
+
+  it("sets preClearBoard to the board as it looked before the clear collapsed it", () => {
+    let board = createEmptyBoard();
+    board = fillRow(board, BOARD_HEIGHT - 1).map((row, index) =>
+      index === BOARD_HEIGHT - 1 ? row.map((_, col) => (col === 4 || col === 5 ? 0 : 1) as const) : row,
+    );
+    const position = { row: BOARD_HEIGHT - 2, col: 4 };
+    const state = stateWith({
+      board,
+      piece: { type: "O", rotation: 0, position },
+      queue: ["L", "S", "T", "J"],
+    });
+
+    const next = step(state);
+
+    // clearedRows indexes into preClearBoard: that row is fully filled there...
+    expect(next.preClearBoard).not.toBeNull();
+    expect(next.preClearBoard![BOARD_HEIGHT - 1].every((cell) => cell !== 0)).toBe(true);
+    // ...but the same index in the already-collapsed board is not the same row.
+    expect(next.board[BOARD_HEIGHT - 1].every((cell) => cell !== 0)).toBe(false);
+  });
+
+  it("leaves preClearBoard null when a lock doesn't clear any rows", () => {
+    const position = { row: BOARD_HEIGHT - 2, col: 4 };
+    const state = stateWith({
+      piece: { type: "O", rotation: 0, position },
+      queue: ["L", "S", "T", "J"],
+    });
+
+    const next = step(state);
+
+    expect(next.preClearBoard).toBeNull();
+  });
+
+  it("clears preClearBoard on the following step after a line clear", () => {
+    let board = createEmptyBoard();
+    board = fillRow(board, BOARD_HEIGHT - 1).map((row, index) =>
+      index === BOARD_HEIGHT - 1 ? row.map((_, col) => (col === 4 || col === 5 ? 0 : 1) as const) : row,
+    );
+    const position = { row: BOARD_HEIGHT - 2, col: 4 };
+    const state = stateWith({
+      board,
+      piece: { type: "O", rotation: 0, position },
+      queue: ["L", "S", "T", "J"],
+    });
+
+    const locked = step(state);
+    expect(locked.preClearBoard).not.toBeNull();
+
+    const next = step(locked);
+
+    expect(next.preClearBoard).toBeNull();
+  });
+
+  it("clears clearedRows and lockedCells on the following step", () => {
+    const position = { row: BOARD_HEIGHT - 2, col: 4 };
+    const state = stateWith({
+      piece: { type: "O", rotation: 0, position },
+      queue: ["L", "S", "T", "J"],
+    });
+
+    const locked = step(state);
+    expect(locked.lockedCells.length).toBeGreaterThan(0);
+
+    const next = step(locked);
+
+    expect(next.clearedRows).toEqual([]);
+    expect(next.lockedCells).toEqual([]);
+  });
+
+  it("hardDrop also sets lockedCells for the piece it locks", () => {
+    const state = stateWith({
+      piece: { type: "O", rotation: 0, position: { row: 0, col: 4 } },
+      queue: ["L", "S", "T", "J"],
+    });
+
+    const next = hardDrop(state);
+
+    expect(next.lockedCells.length).toBe(4);
   });
 });
 
